@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+//composable function
 @Composable
 private fun MainScreen(category: String) {
     var tab by remember { mutableStateOf(Tab.Profile) }
