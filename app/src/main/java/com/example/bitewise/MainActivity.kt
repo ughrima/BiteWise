@@ -51,7 +51,7 @@ private fun MainScreen(category: String) {
                     TextButton(onClick = { tab = Tab.Profile })    { Text("Profile") }
                     TextButton(onClick = { tab = Tab.Ingredients }) { Text("Recipes") }
                     TextButton(onClick = { tab = Tab.Meals })       { Text("Meals") }
-                    TextButton(onClick = { tab = Tab.Scan })        { Text("Scan") }   // 👈 new
+                    TextButton(onClick = { tab = Tab.Scan })        { Text("Scan") }
                 }
             }
         }

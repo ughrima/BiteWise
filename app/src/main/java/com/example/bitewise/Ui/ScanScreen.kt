@@ -29,18 +29,21 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.bitewise.data.LocalRecipes
 import com.example.bitewise.data.Recipe
-import com.example.bitewise.data.score
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.label.ImageLabeling
-import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
+import com.example.bitewise.ml.TFLiteClassifier
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
+
+// Function to calculate score between ingredients and recipe
+fun score(ingredientsSet: Set<String>, recipe: Recipe): Int {
+    return recipe.ingredients.count { it.lowercase() in ingredientsSet }
+}
 
 @Composable
 fun ScanScreen() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val classifier = remember { TFLiteClassifier(context) }
 
     // Permission
     var hasCamera by remember { mutableStateOf(false) }
@@ -108,7 +111,8 @@ fun ScanScreen() {
                         onError = { msg ->
                             isProcessing = false
                             error = msg
-                        }
+                        },
+                        classifier = classifier // Pass classifier here
                     )
                 }) { Text(if (isProcessing) "Processing..." else "Capture") }
 
@@ -153,6 +157,7 @@ fun ScanScreen() {
     }
 }
 
+// Camera preview setup
 @Composable
 private fun CameraPreview(
     previewView: PreviewView,
@@ -173,12 +178,13 @@ private fun CameraPreview(
     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f))
 }
 
-// Capture then run ML Kit
+// Capture image and detect labels
 private fun captureAndDetect(
     context: Context,
     imageCapture: ImageCapture,
     onResult: (List<String>) -> Unit,
-    onError: (String) -> Unit
+    onError: (String) -> Unit,
+    classifier: TFLiteClassifier // Add this line to accept classifier
 ) {
     val outputDir = File(context.cacheDir, "captures").apply { mkdirs() }
     val name = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
@@ -192,17 +198,19 @@ private fun captureAndDetect(
             override fun onError(exc: ImageCaptureException) {
                 onError("Capture failed: ${exc.message}")
             }
+
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                 val bmp = loadBitmap(context, Uri.fromFile(file)) ?: run {
                     onError("Could not decode image")
                     return
                 }
-                runLabeler(bmp, onResult, onError)
+                runLabeler(bmp, onResult, onError, classifier) // Pass classifier here
             }
         }
     )
 }
 
+// Helper function to load a bitmap from URI
 private fun loadBitmap(context: Context, uri: Uri): Bitmap? = try {
     if (Build.VERSION.SDK_INT >= 28) {
         val src = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
@@ -213,29 +221,28 @@ private fun loadBitmap(context: Context, uri: Uri): Bitmap? = try {
     }
 } catch (_: Exception) { null }
 
+// Function to run the labeler (classifier)
 private fun runLabeler(
     bitmap: Bitmap,
     onResult: (List<String>) -> Unit,
-    onError: (String) -> Unit
+    onError: (String) -> Unit,
+    classifier: TFLiteClassifier
 ) {
-    val image = InputImage.fromBitmap(bitmap, 0)
-    val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
-    labeler.process(image)
-        .addOnSuccessListener { labels ->
-            val names = labels.filter { it.confidence >= 0.5f }.map { it.text }
-            onResult(names)
-        }
-        .addOnFailureListener { e -> onError("Labeling failed: ${e.message}") }
+    try {
+        val label = classifier.classify(bitmap) // ✅ CORRECT: Remove numClasses parameter
+        onResult(listOf(label))
+    } catch (e: Exception) {
+        onError("Classification failed: ${e.message}")
+    }
 }
 
+// Recipe card compact display
 @Composable
 private fun RecipeCardCompact(r: Recipe) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(r.name, style = MaterialTheme.typography.titleMedium)
-            Text("${r.type} • ${r.timeMins} min")
-            Text("Calories: ${r.macros.calories}  |  P:${r.macros.protein}g  C:${r.macros.carbs}g  F:${r.macros.fat}g")
-            Text("Ingredients: " + r.ingredients.joinToString(", "))
+            Text("${r.timeMins} min • Ingredients: ${r.ingredients.joinToString(", ")}")
         }
     }
 }
